@@ -36,7 +36,7 @@ contract Accounts is
   }
 
   struct SignerAuthorization {
-    address signer;
+    bool started;
     bool completed;
   }
 
@@ -46,7 +46,7 @@ contract Accounts is
     // These keys may not be keys of other accounts, and may not be authorized by any other
     // account for any purpose.
     Signers signers;
-    mapping(string => SignerAuthorization) signerAuthorizations;
+    mapping(string => mapping(string => SignerAuthorization)) signerAuthorizations;
     // The address at which the account expects to receive transfers. If it's empty/0x0, the
     // account indicates that an address exchange should be initiated with the dataEncryptionKey
     address walletAddress;
@@ -310,9 +310,9 @@ contract Accounts is
     );
 
     authorizedBy[signer] = msg.sender;
-    accounts[msg.sender].signerAuthorizations[role] = SignerAuthorization({
-      completed: false,
-      signer: signer
+    accounts[msg.sender].signerAuthorizations[role][signer] = SignerAuthorization({
+      started: true,
+      completed: false
     });
   }
 
@@ -326,7 +326,10 @@ contract Accounts is
     authorize(signer, v, r, s);
 
     Account storage account = accounts[msg.sender];
-    account.signerAuthorizations[role] = SignerAuthorization({ signer: signer, completed: true });
+    account.signerAuthorizations[role][signer] = SignerAuthorization({
+      started: true,
+      completed: true
+    });
 
     if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(ValidatorSigner))) {
       account.signers.validator = signer;
@@ -341,12 +344,15 @@ contract Accounts is
     emit SignerAuthorized(msg.sender, signer, role);
   }
 
-  function completeSignerAuthorization(address addr, string memory role) public {
-    require(authorizedBy[msg.sender] == addr);
+  function completeSignerAuthorization(address signer, string memory role) public {
+    require(authorizedBy[msg.sender] == signer);
 
-    Account storage account = accounts[addr];
-    SignerAuthorization storage signer = account.signerAuthorizations[role];
-    require(!signer.completed, "Signer already authorized");
+    Account storage account = accounts[signer];
+    require(account.signerAuthorizations[role][signer].started == true, "Signer not authorized");
+    require(
+      account.signerAuthorizations[role][signer].completed == false,
+      "Signer already authorized"
+    );
 
     if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(ValidatorSigner))) {
       account.signers.validator = msg.sender;
@@ -358,7 +364,7 @@ contract Accounts is
       account.signers.vote = msg.sender;
     }
 
-    signer.completed = true;
+    account.signerAuthorizations[role][signer].completed = true;
     emit SignerAuthorized(addr, msg.sender, role);
   }
 
@@ -369,11 +375,10 @@ contract Accounts is
   {
     require(isAccount(account), "Unknown account");
 
-    SignerAuthorization storage authorization = accounts[account].signerAuthorizations[role];
-    return (authorization.completed && authorization.signer == signer);
+    return accounts[account].signerAuthorizations[role][signer].completed;
   }
 
-  function _removeSigner(string memory role) internal {
+  function _removeSigner(address signer, string memory role) internal {
     Account storage account = accounts[msg.sender];
 
     if (
@@ -385,16 +390,16 @@ contract Accounts is
       account.signers.vote = address(0);
     }
 
-    emit SignerRemoved(msg.sender, account.signerAuthorizations[role].signer, role);
-    delete account.signerAuthorizations[role];
+    emit SignerRemoved(msg.sender, signer, role);
+    delete account.signerAuthorizations[role][signer];
   }
 
   /**
    * @notice Removes the currently authorized vote signer for the account.
    * Note that the signers cannot be reauthorized after they have been removed.
    */
-  function removeVoteSigner() public {
-    _removeSigner(VoteSigner);
+  function removeVoteSigner(address signer) public {
+    _removeSigner(signer, VoteSigner);
   }
 
   /**
@@ -417,8 +422,8 @@ contract Accounts is
     account.signers.attestation = address(0);
   }
 
-  function removeSigner(string memory role) public {
-    _removeSigner(role);
+  function removeSigner(address signer, string memory role) public {
+    _removeSigner(signer, role);
   }
 
   /**
@@ -526,7 +531,9 @@ contract Accounts is
    * @return The address with which the account can sign votes.
    */
   function getVoteSigner(address account) public view returns (address) {
-    return getSigner(account, VoteSigner);
+    require(isAccount(account), "Unknown account");
+    address signer = accounts[account].signers.vote;
+    return signer == address(0) ? account : signer;
   }
 
   /**
