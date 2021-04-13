@@ -1,4 +1,4 @@
-import { exec } from 'child_process'
+import { exec, ExecException } from 'child_process'
 import path from 'path'
 
 import { CoreContracts } from './build'
@@ -10,7 +10,7 @@ const IGNORE_CONTRACTS = ['ReleaseGold', 'TransferWhitelist']
 
 const CHECK_CONTRACTS = CoreContracts.filter((c) => !IGNORE_CONTRACTS.includes(c))
 
-const handleRgOutput = (err, rgOutput, stderr) => {
+const handleRgOutput = (err: ExecException, rgOutput: string, stderr: string) => {
   if (err || stderr) {
     throw new Error('ripgrep failed')
   }
@@ -19,8 +19,8 @@ const handleRgOutput = (err, rgOutput, stderr) => {
 
   let safe = true
   opcodeLines.forEach((line) => {
-    const contractPath = line.split('.sol')[0].split('/')
-    const contractMatch = contractPath[contractPath.length - 1]
+    const contractPath = line.split('.sol')[0]
+    const contractMatch = contractPath.slice(contractPath.lastIndexOf('/') + 1)
     if (CHECK_CONTRACTS.includes(contractMatch)) {
       safe = false
       console.error(`Core contract ${contractMatch} should not include ${UNSAFE_OPCODES} opcodes`)
