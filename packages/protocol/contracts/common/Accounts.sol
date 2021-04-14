@@ -46,7 +46,8 @@ contract Accounts is
     // These keys may not be keys of other accounts, and may not be authorized by any other
     // account for any purpose.
     Signers signers;
-    mapping(string => mapping(string => SignerAuthorization)) signerAuthorizations;
+    // role => signer => {started, completed}
+    mapping(string => mapping(address => SignerAuthorization)) signerAuthorizations;
     // The address at which the account expects to receive transfers. If it's empty/0x0, the
     // account indicates that an address exchange should be initiated with the dataEncryptionKey
     address walletAddress;
@@ -305,7 +306,7 @@ contract Accounts is
   function authorizeSigner(address signer, string memory role) public {
     require(isAccount(msg.sender), "Unknown account");
     require(
-      isNotAccount(signer) && isNotAuthorizedSigner(signer),
+      isNotAccount(signer) && isNotAuthorizedSignerForAnotherAccount(signer),
       "Cannot re-authorize address signer"
     );
 
@@ -331,41 +332,24 @@ contract Accounts is
       completed: true
     });
 
-    if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(ValidatorSigner))) {
-      account.signers.validator = signer;
-    } else if (
-      keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(AttestationSigner))
-    ) {
-      account.signers.attestation = signer;
-    } else if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(VoteSigner))) {
-      account.signers.vote = signer;
-    }
-
     emit SignerAuthorized(msg.sender, signer, role);
   }
 
-  function completeSignerAuthorization(address signer, string memory role) public {
-    require(authorizedBy[msg.sender] == signer);
+  function completeSignerAuthorization(address _account, string memory role) public {
+    require(authorizedBy[msg.sender] == _account);
 
-    Account storage account = accounts[signer];
-    require(account.signerAuthorizations[role][signer].started == true, "Signer not authorized");
+    Account storage account = accounts[_account];
     require(
-      account.signerAuthorizations[role][signer].completed == false,
+      account.signerAuthorizations[role][msg.sender].started == true,
+      "Signer authorization not started"
+    );
+    require(
+      account.signerAuthorizations[role][msg.sender].completed == false,
       "Signer already authorized"
     );
 
-    if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(ValidatorSigner))) {
-      account.signers.validator = msg.sender;
-    } else if (
-      keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(AttestationSigner))
-    ) {
-      account.signers.attestation = msg.sender;
-    } else if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(VoteSigner))) {
-      account.signers.vote = msg.sender;
-    }
-
-    account.signerAuthorizations[role][signer].completed = true;
-    emit SignerAuthorized(addr, msg.sender, role);
+    account.signerAuthorizations[role][msg.sender].completed = true;
+    emit SignerAuthorized(_account, msg.sender, role);
   }
 
   function isSigner(address account, address signer, string memory role)
@@ -502,28 +486,28 @@ contract Accounts is
     }
   }
 
-  function getSigner(address _account, string memory role) public view returns (address) {
-    require(isAccount(_account), "Unknown account");
+  // function getSigner(address _account, string memory role) public view returns (address) {
+  //   require(isAccount(_account), "Unknown account");
 
-    Account storage account = accounts[_account];
-    SignerAuthorization storage authorization = account.signerAuthorizations[role];
-    if (authorization.completed) {
-      return authorization.signer;
-    }
+  //   Account storage account = accounts[_account];
+  //   SignerAuthorization storage authorization = account.signerAuthorizations[role];
+  //   if (authorization.completed) {
+  //     return authorization.signer;
+  //   }
 
-    address signer;
-    if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(ValidatorSigner))) {
-      signer = account.signers.validator;
-    } else if (
-      keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(AttestationSigner))
-    ) {
-      signer = account.signers.attestation;
-    } else if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(VoteSigner))) {
-      signer = account.signers.vote;
-    }
+  //   address signer;
+  //   if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(ValidatorSigner))) {
+  //     signer = account.signers.validator;
+  //   } else if (
+  //     keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(AttestationSigner))
+  //   ) {
+  //     signer = account.signers.attestation;
+  //   } else if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(VoteSigner))) {
+  //     signer = account.signers.vote;
+  //   }
 
-    return signer == address(0) ? _account : signer;
-  }
+  //   return signer == address(0) ? _account : signer;
+  // }
 
   /**
    * @notice Returns the vote signer for the specified account.
@@ -560,20 +544,13 @@ contract Accounts is
 
   /**
    * @notice Returns if account has specified a dedicated vote signer.
-   * @param _account The address of the account.
+   * @param  account The address of the account.
    * @return Whether the account has specified a dedicated vote signer.
    */
-  function hasAuthorizedVoteSigner(address _account) external view returns (bool) {
-    require(isAccount(_account));
-
-    Account storage account = accounts[_account];
-    if (account.signers.vote != address(0)) {
-      return true;
-    } else if (account.signerAuthorizations[VoteSigner].signer != address(0)) {
-      return true;
-    } else {
-      return false;
-    }
+  function hasAuthorizedVoteSigner(address account) external view returns (bool) {
+    require(isAccount(account));
+    address signer = accounts[account].signers.vote;
+    return signer != address(0);
   }
 
   /**
@@ -596,32 +573,6 @@ contract Accounts is
     require(isAccount(account));
     address signer = accounts[account].signers.attestation;
     return signer != address(0);
-  }
-
-  /**
-   * @notice Returns if account has specified a dedicated attestation signer.
-   * @param account The address of the account.
-   * @return Whether the account has specified a dedicated attestation signer.
-   */
-  function hasAuthorizedSigner(address account, string calldata role) external view returns (bool) {
-    require(isAccount(account));
-
-    SignerAuthorization storage signer = accounts[account].signerAuthorizations[role];
-    if (signer.completed) {
-      return true;
-    }
-
-    if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(ValidatorSigner))) {
-      return this.hasAuthorizedValidatorSigner(account);
-    } else if (
-      keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(AttestationSigner))
-    ) {
-      return this.hasAuthorizedAttestationSigner(account);
-    } else if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(VoteSigner))) {
-      return this.hasAuthorizedVoteSigner(account);
-    }
-
-    return false;
   }
 
   /**
@@ -727,6 +678,15 @@ contract Accounts is
   }
 
   /**
+   * @notice Check if an address has been an authorized signer for an account.
+   * @param signer The possibly authorized address.
+   * @return Returns `false` if authorized. Returns `true` otherwise.
+   */
+  function isNotAuthorizedSignerForAnotherAccount(address signer) internal view returns (bool) {
+    return (authorizedBy[signer] == address(0) || authorizedBy[signer] == msg.sender);
+  }
+
+  /**
    * @notice Authorizes some role of `msg.sender`'s account to another address.
    * @param authorized The address to authorize.
    * @param v The recovery id of the incoming ECDSA signature.
@@ -739,7 +699,7 @@ contract Accounts is
   function authorize(address authorized, uint8 v, bytes32 r, bytes32 s) private {
     require(isAccount(msg.sender), "Unknown account");
     require(
-      isNotAccount(authorized) && isNotAuthorizedSigner(authorized),
+      isNotAccount(authorized) && isNotAuthorizedSignerForAnotherAccount(authorized),
       "Cannot re-authorize address or locked gold account."
     );
 
