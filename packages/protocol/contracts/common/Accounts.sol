@@ -421,12 +421,16 @@ contract Accounts is
   }
 
   function removeSigner(address signer, string memory role) public {
-    removeDefaultSigner(signer, role);
+    address defaultSigner = getDefaultSigner(msg.sender, role);
+    if (defaultSigner == signer) {
+      removeDefaultSigner(role);
+    }
+
     delete accounts[msg.sender].signerAuthorizations[role][signer];
     emit SignerRemoved(msg.sender, signer, role);
   }
 
-  function removeDefaultSigner(address signer, string memory role) public {
+  function removeDefaultSigner(string memory role) public {
     Account storage account = accounts[msg.sender];
 
     if (keccak256(abi.encodePacked(role)) == keccak256(abi.encodePacked(ValidatorSigner))) {
@@ -439,7 +443,7 @@ contract Accounts is
       account.signers.vote = address(0);
     }
 
-    emit DefaultSignerRemoved(msg.sender, signer, role);
+    emit DefaultSignerRemoved(msg.sender, account.defaultSigners[role], role);
     account.defaultSigners[role] = address(0);
   }
 
@@ -448,10 +452,9 @@ contract Accounts is
    * Note that the signers cannot be reauthorized after they have been removed.
    */
   function removeVoteSigner() public {
-    removeSigner(msg.sender, VoteSigner);
-    Account storage account = accounts[msg.sender];
-    emit VoteSignerRemoved(msg.sender, account.signers.vote);
-    account.signers.vote = address(0);
+    address signer = getDefaultSigner(msg.sender, VoteSigner);
+    removeSigner(signer, VoteSigner);
+    emit VoteSignerRemoved(msg.sender, signer);
   }
 
   /**
@@ -459,10 +462,9 @@ contract Accounts is
    * Note that the signers cannot be reauthorized after they have been removed.
    */
   function removeValidatorSigner() public {
-    removeSigner(msg.sender, ValidatorSigner);
-    Account storage account = accounts[msg.sender];
-    emit ValidatorSignerRemoved(msg.sender, account.signers.validator);
-    account.signers.validator = address(0);
+    address signer = getDefaultSigner(msg.sender, ValidatorSigner);
+    removeSigner(signer, ValidatorSigner);
+    emit ValidatorSignerRemoved(msg.sender, signer);
   }
 
   /**
@@ -470,10 +472,9 @@ contract Accounts is
    * Note that the signers cannot be reauthorized after they have been removed.
    */
   function removeAttestationSigner() public {
-    removeSigner(msg.sender, AttestationSigner);
-    Account storage account = accounts[msg.sender];
-    emit AttestationSignerRemoved(msg.sender, account.signers.attestation);
-    account.signers.attestation = address(0);
+    address signer = getDefaultSigner(msg.sender, AttestationSigner);
+    removeSigner(signer, AttestationSigner);
+    emit AttestationSignerRemoved(msg.sender, signer);
   }
 
   function defaultSignerToAccount(address signer, string memory role)
