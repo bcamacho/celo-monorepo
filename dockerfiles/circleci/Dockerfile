@@ -4,6 +4,10 @@ MAINTAINER Connor McEwen <c@celo.org>
 RUN sudo apt-get update -y
 RUN sudo apt-get install lsb-release libudev-dev libusb-dev libusb-1.0-0 -y
 
+RUN curl -L https://github.com/BurntSushi/ripgrep/releases/download/12.1.1/ripgrep_12.1.1_amd64.deb -o /tmp/ripgrep.deb && \
+  sudo dpkg -i /tmp/ripgrep.deb && \
+  sudo apt-get install -f
+
 # Install Kubernetes, as per https://kubernetes.io/docs/tasks/tools/install-kubectl/
 RUN sudo apt-get install -y apt-transport-https && \
   curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add - && \

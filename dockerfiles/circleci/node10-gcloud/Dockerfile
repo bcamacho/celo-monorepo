@@ -16,4 +16,8 @@ RUN export CLOUD_SDK_REPO="cloud-sdk-$(lsb_release -c -s)" && \
   curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add - && \
   sudo apt-get update -y && sudo apt-get install google-cloud-sdk -y
 
+RUN curl -L https://github.com/BurntSushi/ripgrep/releases/download/12.1.1/ripgrep_12.1.1_amd64.deb -o /tmp/ripgrep.deb && \
+  sudo dpkg -i /tmp/ripgrep.deb && \
+  sudo apt-get install -f
+
 CMD ["/bin/sh"]
